@@ -20,7 +20,6 @@ def _umock(result=None, error=None):
     return BytesIO(unicode_to_str(json.dumps(response)))
 
 
-
 class TestTarget(object):
 
     def call(self, *args, **kwargs):

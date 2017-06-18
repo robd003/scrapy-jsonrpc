@@ -9,47 +9,46 @@ from scrapy.utils.reactor import listen_tcp
 
 from scrapy_jsonrpc.jsonrpc import jsonrpc_server_call
 from scrapy_jsonrpc.serialize import ScrapyJSONEncoder, ScrapyJSONDecoder
-from scrapy_jsonrpc.txweb import JsonResource as JsonResource_
+from scrapy_jsonrpc.txweb import JsonResource
 
 
 logger = logging.getLogger(__name__)
 
 
-class JsonResource(JsonResource_):
+class JsonCrawlerResource(JsonResource):
 
-    def __init__(self, crawler, target=None):
-        super(JsonResource, self).__init__()
+    def __init__(self, crawler):
+        super(JsonCrawlerResource, self).__init__()
 
         self.crawler = crawler
         self.json_encoder = ScrapyJSONEncoder(crawler=crawler)
+        self.json_decoder = ScrapyJSONDecoder(crawler=crawler)
 
     def getChildWithDefault(self, path, request):
         path = path.decode()
-        return super(JsonResource, self).getChildWithDefault(path, request)
+        return super(JsonCrawlerResource, self).getChildWithDefault(path, request)
 
 
-class JsonRpcResource(JsonResource):
+class JsonRpcCrawlerResource(JsonCrawlerResource):
 
     def __init__(self, crawler, target=None):
-        super(JsonRpcResource, self).__init__(crawler, target)
+        super(JsonRpcCrawlerResource, self).__init__(crawler)
 
-        self.json_decoder = ScrapyJSONDecoder(crawler=crawler)
-        self.crawler = crawler
-        self._target = target
+        self._target = target or crawler
 
     def render_GET(self, request):
         return self.get_target()
 
     def render_POST(self, request):
-        reqstr = request.content.getvalue()
+        request_content = request.content.getvalue()
         target = self.get_target()
-        return jsonrpc_server_call(target, reqstr, self.json_decoder)
+        return jsonrpc_server_call(target, request_content, self.json_decoder)
 
     def getChild(self, name, request):
         target = self.get_target()
         try:
             newtarget = getattr(target, name)
-            return JsonRpcResource(self.crawler, newtarget)
+            return JsonRpcCrawlerResource(self.crawler, newtarget)
         except AttributeError:
             return resource.ErrorPage(404, "No Such Resource", "No such child resource.")
 
@@ -57,15 +56,7 @@ class JsonRpcResource(JsonResource):
         return self._target
 
 
-class CrawlerResource(JsonRpcResource):
-
-    ws_name = 'crawler'
-
-    def __init__(self, crawler):
-        super(CrawlerResource, self).__init__(crawler, target=crawler)
-
-
-class RootResource(JsonResource):
+class JsonCrawlerRootResource(JsonCrawlerResource):
 
     def render_GET(self, request):
         return {'resources': list(map(six.u, self.children))}
@@ -83,13 +74,15 @@ class WebService(server.Site, object):
             raise NotConfigured
 
         logfile = crawler.settings['JSONRPC_LOGFILE']
-        self.crawler = crawler
-        self.portrange = [int(x) for x in crawler.settings.getlist('JSONRPC_PORT', [6023, 6073])]
-        self.host = crawler.settings.get('JSONRPC_HOST', '127.0.0.1')
-        self.noisy = False
+        port_range = crawler.settings.getlist('JSONRPC_PORT', [6023, 6073])
 
-        root = RootResource(crawler)
-        root.putChild('crawler', CrawlerResource(self.crawler))
+        self.crawler = crawler
+        self.noisy = False
+        self.portrange = [int(x) for x in port_range]
+        self.host = crawler.settings.get('JSONRPC_HOST', '127.0.0.1')
+
+        root = JsonCrawlerRootResource(crawler)
+        root.putChild('crawler', JsonRpcCrawlerResource(self.crawler))
 
         super(WebService, self).__init__(root, logPath=logfile)
 

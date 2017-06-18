@@ -35,11 +35,20 @@ class JsonRpcError(Exception):
 def jsonrpc_client_call(url, method, *args, **kwargs):
     """Execute a JSON-RPC call on the given url"""
     if args and kwargs:
-        raise ValueError("Pass *args or **kwargs but not both to jsonrpc_client_call")
-    req = {'jsonrpc': '2.0', 'method': method, 'params': args or kwargs, 'id': 1}
+        raise ValueError(
+            'Pass *args or **kwargs but not both to jsonrpc_client_call')
+
+    req = {
+        'id': 1,
+        'jsonrpc': '2.0',
+        'method': method,
+        'params': args or kwargs
+    }
+
     data = unicode_to_str(json.dumps(req))
     body = urllib.request.urlopen(url, data).read()
     res = json.loads(body.decode('utf-8'))
+
     if 'result' in res:
         return res['result']
     elif 'error' in res:
@@ -50,7 +59,7 @@ def jsonrpc_client_call(url, method, *args, **kwargs):
         raise ValueError(msg)
 
 
-def jsonrpc_server_call(target, jsonrpc_request, json_decoder=None):
+def jsonrpc_server_call(target, request_content, json_decoder=None):
     """Execute the given JSON-RPC request (as JSON-encoded string) on the given
     target object and return the JSON-RPC response, as a dict
     """
@@ -58,30 +67,33 @@ def jsonrpc_server_call(target, jsonrpc_request, json_decoder=None):
         json_decoder = ScrapyJSONDecoder()
 
     try:
-        req = json_decoder.decode(jsonrpc_request.decode())
+        request_body = json_decoder.decode(request_content.decode())
     except Exception as e:
         return jsonrpc_error(
             None, jsonrpc_errors.PARSE_ERROR, 'Parse error',
             traceback.format_exc())
 
     try:
-        id, methname = req['id'], req['method']
+        id, method_name = request_body['id'], request_body['method']
     except KeyError:
         return jsonrpc_error(None, jsonrpc_errors.INVALID_REQUEST, 'Invalid Request')
 
     try:
-        method = getattr(target, methname)
+        method = getattr(target, method_name)
     except AttributeError:
         return jsonrpc_error(id, jsonrpc_errors.METHOD_NOT_FOUND, 'Method not found')
 
-    params = req.get('params', [])
-    a, kw = ([], params) if isinstance(params, dict) else (params, {})
-    kw = dict([(str(k), v) for k, v in kw.items()]) # convert kw keys to str
+    params = request_body.get('params', [])
+    args, kwargs = ([], params) if isinstance(params, dict) else (params, {})
+
+    kwargs = {str(key): value for key, value in kwargs.items()} # convert kw keys to str
     try:
-        return jsonrpc_result(id, method(*a, **kw))
+        return jsonrpc_result(id, method(*args, **kwargs))
     except Exception as e:
-        return jsonrpc_error(id, jsonrpc_errors.INTERNAL_ERROR, str(e), \
-            traceback.format_exc())
+        return jsonrpc_error(
+            id, jsonrpc_errors.INTERNAL_ERROR, str(e),
+            traceback.format_exc()
+        )
 
 
 def jsonrpc_error(id, code, message, data=None):
