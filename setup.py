@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='scrapy-jsonrpc',
-    version='0.3.0',
+    version='0.3.5',
     url='https://github.com/scrapy/scrapy-jsonrpc',
     description='Scrapy extenstion to control spiders using JSON-RPC',
     author='Scrapy developers',
